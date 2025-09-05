@@ -1,76 +1,191 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF--8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ethers.js와 MetaMask 연동 (Sepolia)</title>
+    <title>Ethers.js와 MetaMask 연동 실습</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f4f4f9; color: #333; }
-        h1 { color: #4a4a4a; }
-        button { font-size: 16px; padding: 12px 24px; cursor: pointer; border: none; border-radius: 8px; background-color: #007bff; color: white; transition: background-color 0.3s; }
+        h1, h2 { color: #4a4a4a; }
+        button { font-size: 16px; padding: 10px 20px; cursor: pointer; border: none; border-radius: 8px; background-color: #007bff; color: white; transition: background-color 0.3s; margin: 5px; }
         button:hover { background-color: #0056b3; }
-        #walletInfo { margin-top: 30px; padding: 20px; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: inline-block; min-width: 300px; }
-        #walletInfo p { font-size: 16px; word-break: break-all; margin: 10px 0; }
-        #walletInfo p#status { font-weight: bold; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        .container { margin-top: 20px; padding: 20px; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: inline-block; min-width: 400px; }
+        .container p { font-size: 16px; word-break: break-all; margin: 10px 0; }
+        .container p#status { font-weight: bold; }
+        input { font-size: 14px; padding: 8px; width: 90%; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; }
+        #actionsContainer { display: none; } /* 처음에는 숨김 처리 */
+        #actionResult { margin-top: 15px; padding: 10px; background-color: #e9ecef; border-radius: 4px; min-height: 20px; word-break: break-all; text-align: left; }
     </style>
 </head>
 <body>
 
-    <h1>Ethers.js로 MetaMask 지갑 연결하기</h1>
+    <h1>Ethers.js 종합 실습</h1>
     <p>MetaMask 네트워크를 <strong>Sepolia</strong>로 설정해주세요.</p>
-    <button id="connectButton">🦊 MetaMask 지갑 연결</button>
-    <div id="walletInfo">
-        <p id="status">연결을 기다리는 중...</p>
-        <p id="account"></p>
-        <p id="balance"></p>
-        <p id="chainId"></p>
+    
+    <div class="container">
+        <h2>1. 지갑 연결</h2>
+        <button id="connectButton"> MetaMask 지갑 연결</button>
+        <div id="walletInfo">
+            <p id="status">연결을 기다리는 중...</p>
+            <p id="account"></p>
+            <p id="balance"></p>
+            <p id="chainId"></p>
+        </div>
+    </div>
+
+    <div id="actionsContainer" class="container">
+        <h2>2. 기능 실행</h2>
+        <div>
+            <input id="toAddressInput" type="text" placeholder="받는 주소 (0x...)">
+            <input id="valueInput" type="text" placeholder="보낼 금액 (ETH 단위, 예: 0.001)">
+        </div>
+        <button id="signButton">메시지 서명</button>
+        <button id="sendButton">트랜잭션 전송</button>
+        <div id="actionResult">
+            <p>실행 결과가 여기에 표시됩니다.</p>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
 
     <script>
+        // --- DOM 요소 가져오기 ---
         const connectButton = document.getElementById('connectButton');
         const statusEl = document.getElementById('status');
         const accountEl = document.getElementById('account');
         const balanceEl = document.getElementById('balance');
         const chainIdEl = document.getElementById('chainId');
+        
+        const actionsContainer = document.getElementById('actionsContainer');
+        const signButton = document.getElementById('signButton');
+        const sendButton = document.getElementById('sendButton');
+        const toAddressInput = document.getElementById('toAddressInput');
+        const valueInput = document.getElementById('valueInput');
+        const actionResult = document.getElementById('actionResult');
 
+        // 전역 변수: Provider와 Signer 
+        let provider;
+        let signer;
+
+        //  지갑 연결 함수 
         async function connectWallet() {
             if (typeof window.ethereum !== 'undefined') {
                 statusEl.textContent = "MetaMask에 연결을 요청합니다...";
                 try {
-                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    // 메타마스크가 브라우저에 주입해주는 `window.ethereum`을 사용하여 Provider를 생성합니다.
+                    provider = new ethers.BrowserProvider(window.ethereum);
+                    
+                    // 사용자에게 계정 연결을 요청하는 메타마스크 팝업을 띄움
                     await provider.send("eth_requestAccounts", []);
-                    const signer = await provider.getSigner();
+                    
+                    // 사용자가 연결을 승인하면, Signer를 가져옴
+                    signer = await provider.getSigner();
                     
                     const address = await signer.getAddress();
                     const balanceWei = await provider.getBalance(address);
                     const network = await provider.getNetwork();
+                    const formattedBalance = parseFloat(ethers.formatEther(balanceWei)).toFixed(6);
 
-                    // ⭐ 잔액을 소수점 6자리로 포맷팅하는 부분
-                    // 1. Wei 단위를 ETH 단위의 문자열로 변환합니다.
-                    const balanceEther = ethers.formatEther(balanceWei);
-                    // 2. 문자열을 숫자로 변환한 뒤, 소수점 6자리까지의 문자열로 포맷팅합니다.
-                    const formattedBalance = parseFloat(balanceEther).toFixed(6);
-
-                    // 화면에 정보를 표시합니다.
-                    statusEl.textContent = "✅ 지갑 연결 성공!";
+                    statusEl.textContent = "지갑 연결 성공";
                     accountEl.textContent = `주소: ${address}`;
-                    // 수정된 잔액 변수를 사용합니다.
                     balanceEl.textContent = `잔액: ${formattedBalance} ETH`;
                     chainIdEl.textContent = `네트워크 ID: ${network.chainId} (${network.name})`;
 
+                    actionsContainer.style.display = 'block';
+                    connectButton.textContent = '연결됨';
+                    connectButton.disabled = true;
+
                 } catch (error) {
                     console.error(error);
-                    statusEl.textContent = `❌ 연결 실패: ${error.message}`;
+                    statusEl.textContent = `연결 실패: ${error.message}`;
                 }
             } else {
-                statusEl.textContent = "MetaMask가 설치되어 있지 않습니다. 설치해주세요!";
+                statusEl.textContent = "MetaMask가 설치되어 있지 않습니다.";
                 alert("MetaMask를 설치해주세요!");
             }
         }
 
+        //  메시지 서명 함수
+        async function signMessage() {
+            actionResult.innerHTML = `<p>메시지 서명을 시도합니다...</p>`;
+            if (!signer) {
+                alert("지갑을 먼저 연결해주세요!");
+                return;
+            }
+
+            try {
+                const message = "Hello Alchemy University!";
+
+                // Signer를 사용하여 메시지에 서명
+                // 코드가 실행되면 메타마스크에서 서명 요청 팝업이 나타납
+                const signature = await signer.signMessage(message);
+
+                console.log("서명된 메시지:", signature);
+                actionResult.innerHTML = `
+                    <p><strong>서명 성공!</strong></p>
+                    <p>메시지: ${message}</p>
+                    <p style="font-size: 12px;">서명값: ${signature}</p>
+                `;
+
+            } catch(error) {
+                console.error("서명 실패:", error);
+                actionResult.innerHTML = `<p><strong>서명 실패:</strong> ${error.message}</p>`;
+            }
+        }
+
+        //트랜잭션 전송 함수
+        async function sendTransaction() {
+            actionResult.innerHTML = `<p>트랜잭션 전송을 시도합니다...</p>`;
+            if (!signer) {
+                alert("지갑을 먼저 연결해주세요!");
+                return;
+            }
+
+            try {
+                const toAddress = toAddressInput.value;
+                const value = valueInput.value;
+
+                if (!ethers.isAddress(toAddress) || !value || parseFloat(value) <= 0) {
+                    alert("유효한 주소와 0보다 큰 금액을 입력해주세요.");
+                    return;
+                }
+
+                // 트랜잭션 객체를 생성
+                // nonce, gasLimit 등은 Signer가 자동
+                const tx = {
+                    to: toAddress,
+                    value: ethers.parseEther(value) // ETH 단위를 Wei 단위로 변환
+                };
+
+                // Signer를 통해 트랜잭션을 전송
+                // 서명과 전송이 한 번에 이루어지며, 메타마스크 팝업이 나타납니다.
+                const txResponse = await signer.sendTransaction(tx);
+                
+                actionResult.innerHTML = `<p>트랜잭션 전송 중... Etherscan에서 확인:</p>
+                    <p><a href="https://sepolia.etherscan.io/tx/${txResponse.hash}" target="_blank">${txResponse.hash}</a></p>`;
+                
+                // 트랜잭션이 블록에 포함될 때까지 기다립
+                const txReceipt = await txResponse.wait();
+                
+                console.log("트랜잭션 영수증:", txReceipt);
+                actionResult.innerHTML = `
+                    <p><strong>전송 성공!</strong></p>
+                    <p>블록 번호: ${txReceipt.blockNumber}</p>
+                    <p>Etherscan에서 확인: <a href="https://sepolia.etherscan.io/tx/${txReceipt.hash}" target="_blank">링크</a></p>
+                `;
+
+            } catch(error) {
+                console.error("전송 실패:", error);
+                actionResult.innerHTML = `<p><strong>전송 실패:</strong> ${error.message}</p>`;
+            }
+        }
+
+        //이벤트 리스너 연결
         connectButton.addEventListener('click', connectWallet);
+        signButton.addEventListener('click', signMessage);
+        sendButton.addEventListener('click', sendTransaction);
+
     </script>
 
 </body>
